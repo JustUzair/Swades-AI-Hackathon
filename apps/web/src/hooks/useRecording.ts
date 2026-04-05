@@ -25,6 +25,7 @@ export type UploadProgress = {
 };
 
 export function useRecording() {
+  const headerChunkRef = useRef<Blob | null>(null);
   const [state, setState] = useState<RecordingState>("idle");
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [chunkCount, setChunkCount] = useState(0);
@@ -42,6 +43,7 @@ export function useRecording() {
     chunkIndexRef.current = 0;
     chunksRef.current = [];
     setChunkCount(0);
+    headerChunkRef.current = null;
 
     try {
       const res = await fetch(`${SERVER}/api/recordings`, {
@@ -72,11 +74,21 @@ export function useRecording() {
         const idx = chunkIndexRef.current++;
         setChunkCount(idx + 1);
 
-        // Keep in memory AND persist to OPFS as backup
-        chunksRef.current.push(e.data);
-        await saveChunkToOPFS(recordingIdRef.current!, idx, e.data);
-      };
+        // Chunk 0 carries the WebM EBML header — all subsequent chunks are
+        // raw cluster data that Deepgram (and any decoder) can't parse alone.
+        // Prepend the header blob so every chunk is a self-contained WebM file.
+        if (idx === 0) {
+          headerChunkRef.current = e.data;
+        }
 
+        const uploadBlob =
+          idx === 0 || !headerChunkRef.current
+            ? e.data
+            : new Blob([headerChunkRef.current, e.data], { type: e.data.type });
+
+        chunksRef.current.push(uploadBlob);
+        await saveChunkToOPFS(recordingIdRef.current!, idx, uploadBlob);
+      };
       recorder.onerror = e => {
         console.error("[recorder] error", e);
         setError(
