@@ -126,7 +126,7 @@ export function useRecording() {
           total: totalChunks,
           done: i,
           currentChunk: i,
-          failed: 0
+          failed: 0,
         });
 
         const fd = new FormData();
@@ -146,7 +146,12 @@ export function useRecording() {
         }
       }
 
-      setProgress({ total: totalChunks, done: totalChunks, currentChunk: totalChunks, failed: 0 });
+      setProgress({
+        total: totalChunks,
+        done: totalChunks,
+        currentChunk: totalChunks,
+        failed: 0,
+      });
 
       // Clean up OPFS now that upload succeeded
       for (let i = 0; i < totalChunks; i++) {
