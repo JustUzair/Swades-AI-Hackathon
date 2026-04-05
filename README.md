@@ -7,6 +7,14 @@ An assignment for building a reliable chunking setup that ensures recording data
 This project is intentionally **not deployed to Vercel** due to a hard infrastructure
 constraint: Vercel enforces a **4.5 MB payload size limit** on Serverless Functions, which can cause issues as the audio can be several MB depending on recording length.
 
+## Known Limitation
+
+Speaker diarization currently returns all speech as `SPEAKER_00` due to a known
+Deepgram bug affecting the `nova-2-meeting` and related models — reported and
+unresolved since April 2024 (see: Deepgram community thread). The pipeline is
+correctly implemented with `diarize: true` and the full merged audio is sent in
+one request. The issue is on Deepgram's infrastructure, not this codebase.
+
 ## Getting Started
 
 ### Prerequisites
