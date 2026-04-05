@@ -2,6 +2,11 @@
 
 An assignment for building a reliable chunking setup that ensures recording data stays accurate in all cases — no data loss, no silent failures.
 
+## Deployment Note
+
+This project is intentionally **not deployed to Vercel** due to a hard infrastructure
+constraint: Vercel enforces a **4.5 MB payload size limit** on Serverless Functions, which can cause issues as the audio can be several MB depending on recording length.
+
 ## Getting Started
 
 ### Prerequisites
