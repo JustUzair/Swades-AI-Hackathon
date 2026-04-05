@@ -2,6 +2,76 @@
 
 An assignment for building a reliable chunking setup that ensures recording data stays accurate in all cases — no data loss, no silent failures.
 
+## Getting Started
+
+### Prerequisites
+
+Make sure you have the following installed:
+
+- [Node.js](https://nodejs.org/) (v18+) and npm
+- [Bun](https://bun.sh/) — used as the server runtime (`curl -fsSL https://bun.sh/install | bash`)
+- [Docker](https://www.docker.com/) — for PostgreSQL and MinIO
+
+---
+
+### 1. Clone and install dependencies
+
+```bash
+git clone <repo-url>
+cd <repo-folder>
+npm install
+```
+
+### 2. Start infrastructure (PostgreSQL + MinIO)
+
+A `docker-compose.yml` is included at the root. Spin up both services with:
+
+```bash
+docker compose up -d
+```
+
+This starts:
+
+- **PostgreSQL** on `localhost:5432` (user: `postgres`, password: `postgres`, db: `transcription`)
+- **MinIO** on `localhost:9000` (access key: `minioadmin`, secret: `minioadmin`)
+- **MinIO console** (optional UI) on [http://localhost:9001](http://localhost:9001)
+
+### 3. Set up environment variables
+
+**Server** — create `apps/server/.env`:
+
+```dotenv
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/transcription
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+DEEPGRAM_API_KEY=your_deepgram_api_key_here
+```
+
+> Get a free Deepgram API key at [console.deepgram.com](https://console.deepgram.com)
+
+**Web** — create `apps/web/.env.local`:
+
+```dotenv
+NEXT_PUBLIC_SERVER_URL=http://localhost:3000
+```
+
+### 4. Push the database schema
+
+```bash
+npm run db:push
+```
+
+### 5. Run the app
+
+```bash
+npm run dev
+```
+
+- Web app → [http://localhost:3001](http://localhost:3001)
+- API server → [http://localhost:3000](http://localhost:3000)
+
 ## How It Works
 
 ```
@@ -78,9 +148,9 @@ export const options = {
   scenarios: {
     chunk_uploads: {
       executor: "constant-arrival-rate",
-      rate: 5000,           // 5,000 req/s
+      rate: 5000, // 5,000 req/s
       timeUnit: "1s",
-      duration: "1m",       // → 300K requests in 60s
+      duration: "1m", // → 300K requests in 60s
       preAllocatedVUs: 500,
       maxVUs: 1000,
     },
@@ -98,7 +168,7 @@ export default function () {
   });
 
   check(res, {
-    "status 200": (r) => r.status === 200,
+    "status 200": r => r.status === 200,
   });
 }
 ```
