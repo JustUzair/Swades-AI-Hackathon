@@ -1,11 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
-import {
-  saveChunkToOPFS,
-  getChunkFromOPFS,
-  deleteChunkFromOPFS,
-} from "@/lib/opfs";
+import { saveChunkToOPFS, deleteChunkFromOPFS } from "@/lib/opfs";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3000";
 
@@ -25,7 +21,6 @@ export type UploadProgress = {
 };
 
 export function useRecording() {
-  const headerChunkRef = useRef<Blob | null>(null);
   const [state, setState] = useState<RecordingState>("idle");
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [chunkCount, setChunkCount] = useState(0);
@@ -33,9 +28,10 @@ export function useRecording() {
   const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]); // all raw blobs in memory
+  const chunksRef = useRef<Blob[]>([]); // raw blobs in memory for merging
   const chunkIndexRef = useRef(0);
   const recordingIdRef = useRef<string | null>(null);
+  const headerChunkRef = useRef<Blob | null>(null); // first blob holds the WebM header
 
   const start = useCallback(async () => {
     setError(null);
@@ -43,7 +39,7 @@ export function useRecording() {
     chunkIndexRef.current = 0;
     chunksRef.current = [];
     setChunkCount(0);
-    headerChunkRef.current = null;
+    headerChunkRef.current = null; // reset header on each new recording
 
     try {
       const res = await fetch(`${SERVER}/api/recordings`, {
@@ -74,21 +70,18 @@ export function useRecording() {
         const idx = chunkIndexRef.current++;
         setChunkCount(idx + 1);
 
-        // Chunk 0 carries the WebM EBML header — all subsequent chunks are
-        // raw cluster data that Deepgram (and any decoder) can't parse alone.
-        // Prepend the header blob so every chunk is a self-contained WebM file.
-        if (idx === 0) {
-          headerChunkRef.current = e.data;
-        }
+        // Store raw blob in memory — all raw blobs merged later = valid WebM
+        if (idx === 0) headerChunkRef.current = e.data;
+        chunksRef.current.push(e.data);
 
-        const uploadBlob =
+        // OPFS backup: prepend header so each saved file is independently recoverable
+        const opfsBlob =
           idx === 0 || !headerChunkRef.current
             ? e.data
             : new Blob([headerChunkRef.current, e.data], { type: e.data.type });
-
-        chunksRef.current.push(uploadBlob);
-        await saveChunkToOPFS(recordingIdRef.current!, idx, uploadBlob);
+        await saveChunkToOPFS(recordingIdRef.current!, idx, opfsBlob);
       };
+
       recorder.onerror = e => {
         console.error("[recorder] error", e);
         setError(
@@ -127,43 +120,36 @@ export function useRecording() {
 
     const totalChunks = chunkIndexRef.current;
     setState("uploading");
-    setProgress({ total: totalChunks, done: 0, currentChunk: 0, failed: 0 });
+    setProgress({ total: 1, done: 0, currentChunk: 0, failed: 0 });
 
     try {
-      // Upload each chunk individually to preserve temporal sequence for speaker diarization
-      for (let i = 0; i < totalChunks; i++) {
-        const chunkBlob = allChunks[i];
+      // Merge all raw blobs into one complete WebM file — Blob concat is valid
+      // because MediaRecorder raw chunks in order form a proper WebM container.
+      // Sending as one file gives Deepgram full context for speaker diarization.
+      const mimeType =
+        ["audio/webm;codecs=opus", "audio/webm"].find(m =>
+          MediaRecorder.isTypeSupported(m),
+        ) ?? "audio/webm";
 
-        setProgress({
-          total: totalChunks,
-          done: i,
-          currentChunk: i,
-          failed: 0,
-        });
+      const mergedBlob = new Blob(allChunks, { type: mimeType });
 
-        const fd = new FormData();
-        fd.append("audio", chunkBlob, `chunk-${i}.webm`);
-        fd.append("recordingId", recId);
-        fd.append("chunkIndex", String(i));
-        fd.append("clientChunkId", `${recId}-chunk-${i}`);
+      const fd = new FormData();
+      fd.append("audio", mergedBlob, "recording.webm");
+      fd.append("recordingId", recId);
+      fd.append("chunkIndex", "0");
+      fd.append("clientChunkId", `${recId}-merged`);
 
-        const res = await fetch(`${SERVER}/api/chunks/upload`, {
-          method: "POST",
-          body: fd,
-        });
+      const res = await fetch(`${SERVER}/api/chunks/upload`, {
+        method: "POST",
+        body: fd,
+      });
 
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error ?? `Upload failed for chunk ${i}`);
-        }
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Upload failed");
       }
 
-      setProgress({
-        total: totalChunks,
-        done: totalChunks,
-        currentChunk: totalChunks,
-        failed: 0,
-      });
+      setProgress({ total: 1, done: 1, currentChunk: 1, failed: 0 });
 
       // Clean up OPFS now that upload succeeded
       for (let i = 0; i < totalChunks; i++) {

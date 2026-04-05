@@ -87,9 +87,7 @@ export async function transcribeChunk(
       diarize: true,
       punctuate: true,
       smart_format: true,
-      utterances: true,
-      utt_split: 0.8, // split utterances if silence > 0.8s
-      detect_entities: true,
+      utt_split: 0.8,
       mimetype: mimeType,
     },
   );
